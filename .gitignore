@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+
+# Data
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# ML artifacts
+models/*.pkl
+models/*.joblib
+mlruns/
+
+# Reports
+reports/*.html
+reports/*.png
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store
+
+# DVC
+.dvc/cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+#Prompts
+prompts/

@@ -40,5 +40,15 @@ reports/*.png
 # Jupyter
 .ipynb_checkpoints/
 
+# Docker
+docker/postgres_data/
+
+# MLflow
+mlruns/
+mlflow.db
+
+# Prometheus / Grafana
+docker/grafana_data/
+
 #Prompts
 prompts/

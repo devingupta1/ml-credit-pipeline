@@ -1,4 +1,4 @@
-.PHONY: help setup download train serve test lint monitor clean
+.PHONY: help setup download validate train serve test lint monitor clean
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -14,6 +14,9 @@ setup:  ## Install deps, hooks, and start MLflow + Postgres
 
 download:  ## Download Kaggle data and register with DVC
 	python src/data/ingest.py --download
+
+validate:  ## Run Pandera + Great Expectations validation
+	python src/data/validate.py
 
 train:  ## Train models via src/models/train.py
 	python src/models/train.py

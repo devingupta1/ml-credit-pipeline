@@ -1,7 +1,7 @@
 pandas
 pyarrow
 pandera
-great-expectations
+great-expectations==0.18.19
 ydata-profiling
 scikit-learn
 lightgbm

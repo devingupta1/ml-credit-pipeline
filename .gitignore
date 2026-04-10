@@ -30,9 +30,10 @@ models/*.pkl
 models/*.joblib
 mlruns/
 
-# Reports
+# Reports (generated artifacts — not committed)
 reports/*.html
 reports/*.png
+reports/*.json
 
 # IDE
 .vscode/

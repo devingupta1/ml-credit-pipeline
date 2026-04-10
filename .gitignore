@@ -14,11 +14,16 @@ venv/
 env/
 .env
 
-# Data
-data/raw/*
+# Data — raw CSVs tracked by DVC, not git
+data/raw/*.csv
+data/raw/*.zip
 !data/raw/.gitkeep
+!data/raw/*.dvc
 data/processed/*
 !data/processed/.gitkeep
+
+# Kaggle credentials
+kaggle.json
 
 # ML artifacts
 models/*.pkl

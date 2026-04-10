@@ -1,0 +1,5 @@
+outs:
+- md5: 6470b6ec843d233512b15eb65efab7b1
+  size: 88091796
+  hash: md5
+  path: application_merged.parquet

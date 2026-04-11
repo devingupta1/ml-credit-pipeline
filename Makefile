@@ -1,4 +1,4 @@
-.PHONY: help setup download validate merge train serve test lint monitor clean
+.PHONY: help setup download validate merge eda train serve test lint monitor clean
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -20,6 +20,9 @@ validate:  ## Run Pandera + Great Expectations validation
 
 merge:  ## Aggregate all tables and save merged Parquet
 	python src/data/merge.py
+
+eda:  ## Run EDA and generate profiling report + plots
+	python src/data/eda.py
 
 train:  ## Train models via src/models/train.py
 	python src/models/train.py

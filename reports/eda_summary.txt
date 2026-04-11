@@ -1,0 +1,11 @@
+EDA Summary — ml-credit-pipeline
+==================================
+Dataset shape: 307,511 rows x 224 columns
+Target distribution: 91.93% class 0 | 8.07% class 1
+Null rate > 50%: 51 features
+Null rate > 20%: 67 features
+Top 3 features by correlation with TARGET: EXT_SOURCE_3, EXT_SOURCE_2, EXT_SOURCE_1
+DAYS_EMPLOYED sentinel (365243) count: 55,374 (18.0% of rows)
+DAYS_EMPLOYED sentinel default rate: 5.40%
+EXT_SOURCE_2 null rate: 0.21%
+Report generated: 2026-04-10 18:04:27

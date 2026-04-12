@@ -34,7 +34,7 @@ serve:  ## Start FastAPI serving on port 8000
 	uvicorn src.serving.app:app --reload --port 8000
 
 test:  ## Run pytest with coverage
-	pytest tests/ -v --cov=src --cov-report=term-missing
+	.venv/bin/pytest tests/ -v --cov=src --cov-report=term-missing
 
 lint:  ## Run pre-commit hooks on all files
 	pre-commit run --all-files

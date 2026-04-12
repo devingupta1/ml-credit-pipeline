@@ -1,4 +1,4 @@
-.PHONY: help setup download validate merge eda audit train serve test lint monitor clean
+.PHONY: help setup download validate merge eda audit pipeline train serve test lint monitor clean
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -26,6 +26,9 @@ eda:  ## Run EDA and generate profiling report + plots
 
 audit:  ## Run leakage audit on merged dataset
 	python src/data/leakage_audit.py
+
+pipeline:  ## Build and serialize full sklearn pipeline
+	python src/features/pipeline.py
 
 train:  ## Train models via src/models/train.py
 	python src/models/train.py

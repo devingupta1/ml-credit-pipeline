@@ -29,6 +29,7 @@ kaggle.json
 # ML artifacts
 models/*.pkl
 models/*.joblib
+!models/.gitkeep
 mlruns/
 
 # Reports (generated artifacts — not committed)

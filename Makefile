@@ -31,7 +31,7 @@ pipeline:  ## Build and serialize full sklearn pipeline
 	python src/features/pipeline.py
 
 train:  ## Train models via src/models/train.py
-	python src/models/train.py
+	.venv/bin/python src/models/train.py
 
 serve:  ## Start FastAPI serving on port 8000
 	uvicorn src.serving.app:app --reload --port 8000

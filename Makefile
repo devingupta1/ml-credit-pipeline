@@ -1,4 +1,4 @@
-.PHONY: help setup download validate merge eda audit pipeline train serve test lint monitor clean
+.PHONY: help setup download validate merge eda audit pipeline train evaluate serve test lint monitor clean
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -32,6 +32,9 @@ pipeline:  ## Build and serialize full sklearn pipeline
 
 train:  ## Train models via src/models/train.py
 	.venv/bin/python src/models/train.py
+
+evaluate:  ## Run threshold optimization and calibration
+	.venv/bin/python src/models/evaluate.py
 
 serve:  ## Start FastAPI serving on port 8000
 	uvicorn src.serving.app:app --reload --port 8000

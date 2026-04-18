@@ -2,7 +2,7 @@
 evaluate.py
 
 Evaluation script to determine the optimal threshold using a cost matrix,
-calibrate the model probabilities, and log results.
+calibrate the model probabilities, run SHAP explainability, and log results.
 """
 
 import json
@@ -18,9 +18,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
+import pandas as pd
+import shap
 from dotenv import load_dotenv
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    average_precision_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import train_test_split
 
 # Ensure project root is on sys.path
@@ -29,7 +37,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from src.data.merge import load_merged
-from src.features.pipeline import fit_pipeline
+from src.features.pipeline import fit_pipeline, get_feature_names
 
 
 def load_champion_model():
@@ -162,6 +170,154 @@ def save_threshold_config(threshold: float, metrics: dict) -> None:
         json.dump(config, f, indent=2)
 
 
+def run_shap_analysis(model, X_val, y_val, feature_names, n_sample=2000):
+    """Runs SHAP analysis on a subset of data and produces summary and waterfall plots."""
+    np.random.seed(42)
+    n_sample = min(n_sample, len(X_val))
+    idx = np.random.choice(len(X_val), n_sample, replace=False)
+    X_sample = X_val[idx]
+    y_sample = y_val[idx]
+
+    explainer = shap.TreeExplainer(model)
+    explanation = explainer(X_sample)
+
+    if len(explanation.values.shape) == 3:
+        exp_pos = explanation[:, :, 1]
+    elif isinstance(explanation.values, list):
+        exp_pos = explanation[1]
+    else:
+        exp_pos = explanation
+
+    exp_pos.feature_names = feature_names
+    shap_values_pos = exp_pos.values
+
+    reports_dir = Path("reports/plots")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Global summary plot
+    fig = plt.figure(figsize=(10, 8))
+    shap.summary_plot(
+        shap_values_pos, X_sample, feature_names=feature_names, show=False
+    )
+    plt.tight_layout()
+    plt.savefig(reports_dir / "12_shap_global.png", dpi=150, bbox_inches="tight")
+    plt.close()
+    mlflow.log_artifact(str(reports_dir / "12_shap_global.png"))
+
+    # Top 10 Features
+    mean_abs_shap = np.abs(shap_values_pos).mean(axis=0)
+    top_indices = np.argsort(mean_abs_shap)[::-1][:10]
+    print("\nTop 10 SHAP features:")
+    top_10 = []
+    for i, idx_ in enumerate(top_indices):
+        feature = feature_names[idx_]
+        val = mean_abs_shap[idx_]
+        print(f"{i+1}. {feature}: {val:.4f}")
+        top_10.append(f"{i+1}. {feature}: {val:.4f}")
+
+    # 2. Local waterfall explanations
+    preds = model.predict(X_sample)
+
+    tp_idx = np.where((y_sample == 1) & (preds == 1))[0]
+    tn_idx = np.where((y_sample == 0) & (preds == 0))[0]
+    fp_idx = np.where((y_sample == 0) & (preds == 1))[0]
+
+    def save_waterfall(idx_list, filename):
+        if len(idx_list) > 0:
+            target_idx = idx_list[0]
+            fig = plt.figure(figsize=(8, 6))
+            shap.waterfall_plot(exp_pos[target_idx], show=False)
+            plt.tight_layout()
+            plt.savefig(reports_dir / filename, dpi=150, bbox_inches="tight")
+            plt.close()
+            mlflow.log_artifact(str(reports_dir / filename))
+
+    save_waterfall(tp_idx, "13_shap_waterfall_tp.png")
+    save_waterfall(tn_idx, "14_shap_waterfall_tn.png")
+    save_waterfall(fp_idx, "15_shap_waterfall_fp.png")
+
+    return "\n".join(top_10)
+
+
+def run_subgroup_analysis(model, pipeline, df_val, threshold) -> pd.DataFrame:
+    """Computes AUC-PR per demographic subgroup correctly handled via calibrated probabilities."""
+    results = []
+
+    print("Transforming validation data for subgroup analysis...")
+    X_val = pipeline.transform(df_val)
+    y_val = df_val["TARGET"].values
+
+    proba = model.predict_proba(X_val)[:, 1]
+
+    def evaluate_group(group_name, category, mask):
+        if mask.sum() > 0:
+            y_sub = y_val[mask]
+            prob_sub = proba[mask]
+            auc_pr = (
+                average_precision_score(y_sub, prob_sub)
+                if len(np.unique(y_sub)) > 1
+                else np.nan
+            )
+            auc_roc = (
+                roc_auc_score(y_sub, prob_sub) if len(np.unique(y_sub)) > 1 else np.nan
+            )
+            default_rate = y_sub.mean()
+            results.append(
+                {
+                    "Group": group_name,
+                    "Category": category,
+                    "AUC-PR": auc_pr,
+                    "AUC-ROC": auc_roc,
+                    "Default Rate": default_rate,
+                    "Size": mask.sum(),
+                }
+            )
+
+    # 1. CODE_GENDER
+    if "CODE_GENDER" in df_val.columns:
+        for g in ["M", "F"]:
+            mask = df_val["CODE_GENDER"] == g
+            evaluate_group("Gender", g, mask)
+
+    # 2. Age Bucket from DAYS_BIRTH
+    if "DAYS_BIRTH" in df_val.columns:
+        age_years = -df_val["DAYS_BIRTH"] / 365.25
+        evaluate_group("Age", "Young (<30)", age_years < 30)
+        evaluate_group("Age", "Middle (30-50)", (age_years >= 30) & (age_years < 50))
+        evaluate_group("Age", "Senior (>=50)", age_years >= 50)
+
+    # 3. NAME_CONTRACT_TYPE
+    if "NAME_CONTRACT_TYPE" in df_val.columns:
+        for c in ["Cash loans", "Revolving loans"]:
+            mask = df_val["NAME_CONTRACT_TYPE"] == c
+            evaluate_group("Contract", c, mask)
+
+    df_results = pd.DataFrame(results)
+
+    if not df_results.empty:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        labels = df_results["Group"] + ": " + df_results["Category"]
+        y_pos = np.arange(len(labels))
+        ax.barh(y_pos, df_results["AUC-PR"], align="center", color="#3498db")
+        ax.set_yticks(y_pos, labels=labels)
+        ax.invert_yaxis()
+        ax.set_xlabel("AUC-PR")
+        ax.set_title("AUC-PR by Demographic Subgroup")
+        ax.set_xlim([0, 1.0])
+        ax.grid(True, linestyle="--", alpha=0.7)
+
+        reports_dir = Path("reports/plots")
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        filepath = reports_dir / "16_subgroup_auc.png"
+
+        fig.tight_layout()
+        fig.savefig(filepath, dpi=150)
+        plt.close(fig)
+        mlflow.log_artifact(str(filepath))
+
+    return df_results
+
+
 def run_evaluation() -> dict:
     """Orchestrates the evaluation pipeline."""
     load_dotenv()
@@ -174,60 +330,59 @@ def run_evaluation() -> dict:
     else:
         exp_id = experiment.experiment_id
 
-    # 1. Load data
     print("Loading merged dataset...")
     df = load_merged()
 
     y = df["TARGET"].values
     X_df = df.drop(columns=["TARGET"]) if "TARGET" in df.columns else df.copy()
 
-    # Stratified split: 80% train to fit pipeline, 20% val for evaluation & calibration
     X_tr_raw, X_val_raw, y_tr, y_val = train_test_split(
         X_df, y, test_size=0.2, stratify=y, random_state=42
     )
 
-    # Restore target for pipeline fitting
     df_train = X_tr_raw.copy()
     df_train["TARGET"] = y_tr
 
-    # 2. Fit pipeline on train, transform validation
     print("Fitting preprocessing pipeline on training data...")
     pipeline, _ = fit_pipeline(df_train, "TARGET")
     print("Transforming validation data...")
     X_val = pipeline.transform(X_val_raw)
-
-    # 3. Load champion model
     model_raw = load_champion_model()
 
-    # 4. Predict raw probabilities
+    # Get feature names from the pipeline utility
+    feature_names = get_feature_names(pipeline)
+    if len(feature_names) == 0:
+        feature_names = model_raw.feature_name_
+
     prob_raw = model_raw.predict_proba(X_val)[:, 1]
 
     with mlflow.start_run(experiment_id=exp_id, run_name="evaluation"):
-        # 6. Callibrate model
         print("Calibrating model using isotonic regression...")
         model_calibrated = calibrate_model(model_raw, X_val, y_val)
 
         prob_cal = model_calibrated.predict_proba(X_val)[:, 1]
 
-        # 5. Threshold sweep
         print("Running threshold sweep...")
         eval_results = find_optimal_threshold(y_val, prob_cal, fn_cost=10, fp_cost=1)
         plot_threshold_sweep(eval_results)
 
-        # 7. Reliability diagram
         plot_reliability_diagram(model_raw, model_calibrated, X_val, y_val)
 
-        # 8. Save threshold
         save_threshold_config(eval_results["optimal_threshold"], eval_results)
         mlflow.log_artifact("reports/threshold_config.json")
 
-        # Optionally, log the calibrated model back to MLflow or a new run
         mlflow.sklearn.log_model(model_calibrated, "model_calibrated")
 
-        # Print summary
+        auc_roc = roc_auc_score(y_val, prob_cal)
+        auc_pr = average_precision_score(y_val, prob_cal)
+        eval_results["auc_roc"] = auc_roc
+        eval_results["auc_pr"] = auc_pr
+
         summary = f"""
 Evaluation Summary
 ================================
+AUC-ROC:            {auc_roc:.4f}
+AUC-PR:             {auc_pr:.4f}
 Optimal threshold:  {eval_results["optimal_threshold"]:.2f}
 Precision at threshold: {eval_results["precision_at_threshold"]*100:.2f}%
 Recall at threshold:    {eval_results["recall_at_threshold"]*100:.2f}%
@@ -237,7 +392,26 @@ Calibration: isotonic regression applied
 """
         print(summary)
 
-        return eval_results
+        # New steps for prompt 12: SHAP and Subgroup analysis
+        print("Running SHAP analysis on a subset (n=2000)...")
+        top_10 = run_shap_analysis(
+            model_raw, X_val, y_val, feature_names, n_sample=2000
+        )
+
+        print("Running Subgroup Analysis...")
+        df_val = X_val_raw.copy()
+        df_val["TARGET"] = y_val
+        subgroup_results = run_subgroup_analysis(
+            model_calibrated, pipeline, df_val, eval_results["optimal_threshold"]
+        )
+        print("\nSubgroup AUC-PR Results:")
+        print(subgroup_results.to_markdown(index=False))
+
+        return {
+            "eval_results": eval_results,
+            "top_10": top_10,
+            "subgroup_results": subgroup_results,
+        }
 
 
 if __name__ == "__main__":
